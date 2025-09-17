@@ -190,6 +190,7 @@ function Object:New(Model, ExtraInfo)
             Boxes = {},
             Tracers = {},
             Names = {},
+            Chams = {},
         },
         GlobalSettings = Settings,
         Model = Model,
@@ -200,7 +201,10 @@ function Object:New(Model, ExtraInfo)
                 Color = Settings.Boxes.Color,
                 Thickness = Settings.Boxes.Thickness,
             },
-        
+         Cham = {
+                Color = Settings.Chams.Color,
+                Transparency = Settings.Chams.Transparency
+            },
             Name = {
                 Color = Settings.Names.Color,
                 Outline = Settings.Names.Outline,
@@ -213,7 +217,7 @@ function Object:New(Model, ExtraInfo)
             Tracer = {
                 Thickness = Settings.Tracers.Thickness,
                 Color = Settings.Tracers.Color,
-            }
+            },
         },
     }
     
@@ -337,61 +341,71 @@ function Object:DrawName(Quad)
     local RenderSettings = self.RenderSettings
     local GlobalSettings = self.GlobalSettings
     
-    local RenderNames = RenderSettings.Names
-    local GlobalNames = GlobalSettings.Names
+    local NameSettings = RenderSettings.Names
+    local GlobalNameSettings = GlobalSettings.Names
     
-    local Settings = RenderSettings.Names or GlobalNames
-    
-    local ShowDistance = GetValue(RenderNames, GlobalNames, "Distance")
-    local Size = GetValue(RenderNames, GlobalNames, "Size")
-    local Resize = GetValue(RenderNames, GlobalNames, "Resize")
-    local ResizeWeight = GetValue(RenderNames, GlobalNames, "ResizeWeight")
-    local ShowHealth = GetValue(RenderNames, GlobalNames, "Health")
-    local Font = GetValue(RenderNames, GlobalNames, "Font")
-    local Center = GetValue(RenderNames, GlobalNames, "Center")
-    local TeamColors = GetValue(RenderNames, GlobalNames, "TeamColors")
-    local Color = GetValue(RenderNames, GlobalNames, "Color")
-    local Outline = GetValue(RenderNames, GlobalNames, "Outline")
-    
-    local Distance = self.Model:GetPivot().Position
-    
-    local Properties = {
-        Visible = true,
-        Color = TeamColors and ESP:GetTeamColor(self.Model) or Color,
-        Outline = Outline,
-        Text = not (Size or ShowHealth) and self.Name or ("%s [%sm]%s"):format(self.Name, ShowDistance and tostring(ESP:GetDistance(Distance)) or "", ShowHealth and ("\n%d/%d (%d%%)"):format(ESP:GetHealth(self.Model)) or ""),
-        Size = not Resize and Size or Size - math.clamp((ESP:GetDistance(Distance) * ResizeWeight), 1, Size * 0.75),
-        Font = Font,
-        Center = Center,
-        Position = Quad.BoxTop,
-    }
+    local TeamColors = GetValue(NameSettings, GlobalNameSettings, "TeamColors")
+    local Color = GetValue(NameSettings, GlobalNameSettings, "Color")
+    local Outline = GetValue(NameSettings, GlobalNameSettings, "Outline")
+    local Font = GetValue(NameSettings, GlobalNameSettings, "Font")
+    local Center = GetValue(NameSettings, GlobalNameSettings, "Center")
+    local Size = GetValue(NameSettings, GlobalNameSettings, "Size")
+    local Resize = GetValue(NameSettings, GlobalNameSettings, "Resize")
+    local ResizeWeight = GetValue(NameSettings, GlobalNameSettings, "ResizeWeight")
 
-    for Property, Value in next, Properties do
-        self.Objects.Name[Property] = Value
+    local PlayerName = self.Name
+    local Distance = ESP:GetDistance(self.Model:GetPivot().Position)
+    local Health = ESP:GetHealth(self.Model)
+
+    -- Build the text step by step
+    local TextLines = {}
+    table.insert(TextLines, PlayerName)                     -- Name
+    if NameSettings.Distance then
+        table.insert(TextLines, string.format("[%sm]", Distance))  -- Distance
     end
+    if NameSettings.Health then
+        local H, MaxH, Pct = table.unpack(Health)
+        table.insert(TextLines, string.format("%d/%d (%d%%)", H, MaxH, Pct)) -- Health
+    end
+
+    self.Objects.Name.Text = table.concat(TextLines, "\n")
+    self.Objects.Name.Visible = true
+    self.Objects.Name.Color = TeamColors and ESP:GetTeamColor(self.Model) or Color
+    self.Objects.Name.Outline = Outline
+    self.Objects.Name.Size = Resize and Size - math.clamp((Distance * ResizeWeight), 1, Size * 0.75) or Size
+    self.Objects.Name.Font = Font
+    self.Objects.Name.Center = Center
+    self.Objects.Name.Position = Quad.BoxTop
 end
 
-function Object:DrawTracer(Quad)
-    local RenderSettings = self.RenderSettings
-    local GlobalSettings = self.GlobalSettings
-    
-    local RenderTracers = RenderSettings.Tracers
-    local GlobalTracers = GlobalSettings.Tracers
-    
-    local TeamColors = GetValue(RenderTracers, GlobalTracers, "TeamColors")
-    local Color = GetValue(RenderTracers, GlobalTracers, "Color")
-    local Thickness = GetValue(RenderTracers, GlobalTracers, "Thickness")
-    
-    local Properties = {
-        Visible = true,
-        Color = TeamColors and ESP:GetTeamColor(self.Model) or Color,
-        Thickness = Thickness,
-        From = workspace.CurrentCamera.ViewportSize * Vector2.new(.5, 1),
-        To = Quad.BoxBottom,
-    }
-    
-    for Property, Value in next, Properties do
-        self.Objects.Tracer[Property] = Value
+function Object:DrawChams()
+    if not ESP.Settings.Chams.Enabled then return end
+
+    local Model = self.Model
+    local Distance = ESP:GetDistance(Model:GetPivot().Position)
+    if Distance > ESP.Settings.MaxDistance then return end
+
+    -- Remove existing chams to prevent duplicates
+    if self.ChamsParts then
+        for _, Part in pairs(self.ChamsParts) do
+            Part:Destroy()
+        end
+    end
+    self.ChamsParts = {}
+
+    -- Loop through all parts of the character
+    for _, Part in pairs(Model:GetDescendants()) do
+        if Part:IsA("BasePart") then
+            local Cham = Instance.new("BoxHandleAdornment")
+            Cham.Adornee = Part
+            Cham.Size = Part.Size
+            Cham.Color3 = ESP.Settings.Chams.Color
+            Cham.Transparency = ESP.Settings.Chams.Transparency
+            Cham.AlwaysOnTop = true
+            Cham.ZIndex = 10
+            Cham.Parent = game.CoreGui
+            table.insert(self.ChamsParts, Cham)
+        end
     end
 end
 
@@ -465,6 +479,16 @@ function Object:Refresh()
     else
         self.Objects.Tracer.Visible = false
     end
+    if ESP.Settings.Chams.Enabled then
+    self:DrawChams()
+else
+    if self.ChamsParts then
+        for _, Part in pairs(self.ChamsParts) do
+            Part:Destroy()
+        end
+        self.ChamsParts = nil
+    end
+end
 end
 
 game.RunService.Stepped:Connect(function()
