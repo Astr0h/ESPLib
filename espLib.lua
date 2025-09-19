@@ -2,6 +2,7 @@
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local ESP = {}
 
 ESP.Enabled = false
 ESP.Objects = ESP.Objects or {}
