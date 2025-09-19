@@ -221,24 +221,84 @@ local function updateESP()
     for _, c in ipairs(toDelete) do removeESP(c) end
 end
 
+-- Convert 3D -> 2D screen position
+local function to2D(part)
+    local cam = workspace.CurrentCamera
+    local pos, vis = cam:WorldToViewportPoint(part.Position)
+    return Vector2.new(pos.X, pos.Y), vis
+end
+
+-- Draw connection if both parts exist & visible
+local function drawBone(line, partA, partB)
+    if partA and partB then
+        local a, visA = to2D(partA)
+        local b, visB = to2D(partB)
+        if visA and visB then
+            line.From = a
+            line.To = b
+            line.Color = ESP.SkeletonColor
+            line.Thickness = ESP.SkeletonThickness
+            line.Visible = true
+            return
+        end
+    end
+    line.Visible = false
+end
+
 local function updateSkeletons()
     if not ESP.SkeletonEnabled then return end
     local toDelete = {}
+
     for char, lines in pairs(ESP.Skeletons) do
         if not (char and char.Parent == workspace) then
             table.insert(toDelete, char)
             continue
         end
+
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then
             table.insert(toDelete, char)
             continue
         end
-        -- drawBone logic goes here (same as your fixed skeleton code)
-    end
-    for _, c in ipairs(toDelete) do removeSkeleton(c) end
-end
 
+        if hum.RigType == Enum.HumanoidRigType.R15 then
+            -- Torso + spine
+            drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("UpperTorso"))
+            drawBone(lines.UpperTorsoToLowerTorso, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LowerTorso"))
+
+            -- Left Arm
+            drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LeftUpperArm"))
+            drawBone(lines.LeftUpperArmToLeftLowerArm, char:FindFirstChild("LeftUpperArm"), char:FindFirstChild("LeftLowerArm"))
+            drawBone(lines.LeftLowerArmToLeftHand, char:FindFirstChild("LeftLowerArm"), char:FindFirstChild("LeftHand"))
+
+            -- Right Arm
+            drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("RightUpperArm"))
+            drawBone(lines.RightUpperArmToRightLowerArm, char:FindFirstChild("RightUpperArm"), char:FindFirstChild("RightLowerArm"))
+            drawBone(lines.RightLowerArmToRightHand, char:FindFirstChild("RightLowerArm"), char:FindFirstChild("RightHand"))
+
+            -- Left Leg
+            drawBone(lines.LowerTorsoToLeftUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("LeftUpperLeg"))
+            drawBone(lines.LeftUpperLegToLeftLowerLeg, char:FindFirstChild("LeftUpperLeg"), char:FindFirstChild("LeftLowerLeg"))
+            drawBone(lines.LeftLowerLegToLeftFoot, char:FindFirstChild("LeftLowerLeg"), char:FindFirstChild("LeftFoot"))
+
+            -- Right Leg
+            drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("RightUpperLeg"))
+            drawBone(lines.RightUpperLegToRightLowerLeg, char:FindFirstChild("RightUpperLeg"), char:FindFirstChild("RightLowerLeg"))
+            drawBone(lines.RightLowerLegToRightFoot, char:FindFirstChild("RightLowerLeg"), char:FindFirstChild("RightFoot"))
+
+        else -- R6 rigs
+            drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("Torso"))
+            drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Left Arm"))
+            drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Right Arm"))
+            drawBone(lines.LowerTorsoToLeftUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Left Leg"))
+            drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Right Leg"))
+        end
+    end
+
+    for _, c in ipairs(toDelete) do
+        removeSkeleton(c)
+    end
+end
 -- Hook loops once
 if not ESP.__BoxConn or not ESP.__BoxConn.Connected then
     ESP.__BoxConn = RunService.RenderStepped:Connect(updateESP)
