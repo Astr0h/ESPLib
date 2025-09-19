@@ -1,81 +1,121 @@
 --Variables lol
-local ESP = {}
-local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-
-
--- =========================
--- BOX ESP (fixed)
--- =========================
-
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 ESP.Enabled = false
 ESP.Objects = ESP.Objects or {}
+
+-- Config
 ESP.BoxColor = ESP.BoxColor or Color3.fromRGB(0, 255, 0)
 ESP.BoxThickness = ESP.BoxThickness or 1.5
 
--- Create a box for a specific character
-local function createBox(char)
-    -- guard: don't double-create for the same character
-    if ESP.Objects[char] then return end
+ESP.NameEnabled = true
+ESP.NameColor = ESP.NameColor or Color3.fromRGB(255, 255, 255)
 
+ESP.HealthEnabled = true -- no static color, auto lerp
+
+ESP.DistanceEnabled = true
+ESP.DistanceColor = ESP.DistanceColor or Color3.fromRGB(200, 200, 200)
+
+-- =========================
+-- Helpers
+-- =========================
+
+local function newBox()
     local box = Drawing.new("Square")
     box.Thickness = ESP.BoxThickness
     box.Color = ESP.BoxColor
     box.Filled = false
     box.Transparency = 1
     box.Visible = false
+    return box
+end
+
+local function newText(size, color)
+    local tag = Drawing.new("Text")
+    tag.Text = ""
+    tag.Size = size
+    tag.Center = true
+    tag.Outline = true
+    tag.Visible = false
+    tag.Color = color
+    return tag
+end
+
+-- Health lerp color (Green -> Yellow -> Red)
+local function getHealthColor(current, max)
+    if max <= 0 then return Color3.fromRGB(255, 0, 0) end
+    local ratio = math.clamp(current / max, 0, 1)
+    if ratio > 0.5 then
+        -- Green to Yellow
+        local t = (ratio - 0.5) * 2
+        return Color3.fromRGB(255 * (1 - t), 255, 0)
+    else
+        -- Yellow to Red
+        local t = ratio * 2
+        return Color3.fromRGB(255, 255 * t, 0)
+    end
+end
+
+-- =========================
+-- Create / Remove
+-- =========================
+
+local function createESP(char)
+    if ESP.Objects[char] then return end
 
     ESP.Objects[char] = {
-        Box = box,
+        Box = newBox(),
+        NameTag = newText(16, ESP.NameColor),
+        HealthTag = newText(14, Color3.fromRGB(255, 255, 255)), -- dynamic color
+        DistanceTag = newText(14, ESP.DistanceColor),
         Character = char,
     }
 end
 
--- Remove a character's box and entry
-local function removeBox(char)
+local function removeESP(char)
     local data = ESP.Objects[char]
-    if data then
-        if data.Box then
-            data.Box:Remove()
-        end
-        ESP.Objects[char] = nil
-    end
+    if not data then return end
+    if data.Box then data.Box:Remove() end
+    if data.NameTag then data.NameTag:Remove() end
+    if data.HealthTag then data.HealthTag:Remove() end
+    if data.DistanceTag then data.DistanceTag:Remove() end
+    ESP.Objects[char] = nil
 end
 
--- Update all boxes each frame
+-- =========================
+-- Update Loop
+-- =========================
+
 local function update()
     local cam = workspace.CurrentCamera
     if not cam then return end
 
-    -- collect invalid entries to delete after iteration
     local toDelete = {}
 
     for char, data in pairs(ESP.Objects) do
-        local box = data.Box
         local alive = char and char.Parent == workspace
-
-        -- If character got destroyed / left workspace, purge it
-        if (not alive) then
-            box.Visible = false
+        if not alive then
             table.insert(toDelete, char)
             continue
         end
 
-        -- Always apply latest styles every frame
+        local box, nameTag, healthTag, distTag = data.Box, data.NameTag, data.HealthTag, data.DistanceTag
+
+        -- Apply latest styles
         box.Color = ESP.BoxColor
         box.Thickness = ESP.BoxThickness
+        nameTag.Color = ESP.NameColor
+        distTag.Color = ESP.DistanceColor
 
         if ESP.Enabled then
             local hrp = char:FindFirstChild("HumanoidRootPart")
             local head = char:FindFirstChild("Head")
+            local hum = char:FindFirstChildOfClass("Humanoid")
 
             if hrp and head then
+                -- === Box ===
                 local rootPos, vis = cam:WorldToViewportPoint(hrp.Position)
                 local headPos = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
                 local scale = (headPos - rootPos).Magnitude
@@ -87,31 +127,78 @@ local function update()
                 else
                     box.Visible = false
                 end
+
+                -- === Name Tag ===
+                if ESP.NameEnabled then
+                    local pos, vis2 = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
+                    if vis2 then
+                        local plr = Players:GetPlayerFromCharacter(char)
+                        nameTag.Text = plr and plr.Name or "Unknown"
+                        nameTag.Position = Vector2.new(pos.X, pos.Y)
+                        nameTag.Visible = true
+                    else
+                        nameTag.Visible = false
+                    end
+                else
+                    nameTag.Visible = false
+                end
+
+                -- === Health Tag ===
+                if ESP.HealthEnabled and hum then
+                    local pos, vis3 = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 1.9, 0))
+                    if vis3 then
+                        healthTag.Text = string.format("%d / %d", math.floor(hum.Health), hum.MaxHealth)
+                        healthTag.Position = Vector2.new(pos.X, pos.Y)
+                        healthTag.Color = getHealthColor(hum.Health, hum.MaxHealth)
+                        healthTag.Visible = true
+                    else
+                        healthTag.Visible = false
+                    end
+                else
+                    healthTag.Visible = false
+                end
+
+                -- === Distance Tag ===
+                if ESP.DistanceEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local pos, vis4 = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                    if vis4 then
+                        local dist = (hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                        distTag.Text = string.format("[%dm]", math.floor(dist))
+                        distTag.Position = Vector2.new(pos.X, pos.Y)
+                        distTag.Visible = true
+                    else
+                        distTag.Visible = false
+                    end
+                else
+                    distTag.Visible = false
+                end
             else
-                box.Visible = false
+                box.Visible, nameTag.Visible, healthTag.Visible, distTag.Visible = false, false, false, false
             end
         else
-            box.Visible = false
+            box.Visible, nameTag.Visible, healthTag.Visible, distTag.Visible = false, false, false, false
         end
     end
 
-    -- finalize deletions
     for _, deadChar in ipairs(toDelete) do
-        removeBox(deadChar)
+        removeESP(deadChar)
     end
 end
 
--- Hook the update loop once
+-- Hook update once
 if not ESP.__BoxConn or not ESP.__BoxConn.Connected then
     ESP.__BoxConn = RunService.RenderStepped:Connect(update)
 end
 
+-- =========================
 -- Public API
+-- =========================
+
 function ESP:Enable()
     self.Enabled = true
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
-            createBox(plr.Character)
+            createESP(plr.Character)
         end
     end
 end
@@ -119,28 +206,27 @@ end
 function ESP:Disable()
     self.Enabled = false
     for _, data in pairs(self.Objects) do
-        if data.Box then data.Box.Visible = false end
+        data.Box.Visible, data.NameTag.Visible, data.HealthTag.Visible, data.DistanceTag.Visible = false, false, false, false
     end
 end
 
--- Track players joining/leaving and respawning
+-- =========================
+-- Player Hooks
+-- =========================
+
 local function hookPlayer(plr)
     if plr == LocalPlayer then return end
 
-    -- On spawn, create (or replace) the box for the new Character
     plr.CharacterAdded:Connect(function(char)
-        task.wait(0.5) -- small buffer for parts to exist
+        task.wait(0.5)
         if ESP.Enabled then
-            createBox(char)
+            createESP(char)
         end
     end)
 
-    -- On despawn, remove the old Character's box so duplicates don't stack
-    if plr.CharacterRemoving then
-        plr.CharacterRemoving:Connect(function(char)
-            removeBox(char)
-        end)
-    end
+    plr.CharacterRemoving:Connect(function(char)
+        removeESP(char)
+    end)
 end
 
 for _, plr in ipairs(Players:GetPlayers()) do
@@ -150,16 +236,13 @@ end
 Players.PlayerAdded:Connect(hookPlayer)
 
 Players.PlayerRemoving:Connect(function(plr)
-    -- remove any boxes that belong to this player (in case character is still around)
     for char in pairs(ESP.Objects) do
         local owner = Players:GetPlayerFromCharacter(char)
         if owner == plr then
-            removeBox(char)
+            removeESP(char)
         end
     end
 end)
-
-
 -- =========================
 -- Skeleton ESP (fixed)
 -- =========================
@@ -355,6 +438,5 @@ Players.PlayerRemoving:Connect(function(plr)
         removeSkeleton(plr.Character)
     end
 end)
-
 
 return ESP
