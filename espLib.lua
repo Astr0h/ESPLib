@@ -13,6 +13,7 @@ local ESP = _G.SeosHubESP
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- =========================
 -- Defaults / Config
@@ -37,6 +38,7 @@ ESP.Skeletons = ESP.Skeletons or {}
 
 ESP.TracersEnabled = ESP.TracersEnabled or false
 ESP.TracerColor = ESP.TracerColor or Color3.fromRGB(255, 255, 255)
+ESP.TracerThickness = ESP.TracerThickness or 1.5
 
 ESP.TeamColorEnabled = ESP.TeamColorEnabled or false
 ESP.TeamCheck = ESP.TeamCheck or false
@@ -67,10 +69,10 @@ local function newText(size, color)
     return tag
 end
 
-local function newLine()
+local function newLine(thickness, color)
     local line = Drawing.new("Line")
-    line.Thickness = ESP.SkeletonThickness
-    line.Color = ESP.SkeletonColor
+    line.Thickness = thickness or 1.5
+    line.Color = color or Color3.fromRGB(255, 255, 255)
     line.Transparency = 1
     line.Visible = false
     return line
@@ -89,21 +91,14 @@ local function getHealthColor(current, max)
     end
 end
 
-local function newTracer()
-    local line = Drawing.new("Line")
-    line.Thickness = 1.5
-    line.Color = ESP.TracerColor
-    line.Transparency = 1
-    line.Visible = false
-    return line
-end
-
+-- Raycast visibility check
 local function isVisible(origin, target)
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Blacklist
-    params.FilterDescendantsInstances = {LocalPlayer.Character, workspace.CurrentCamera}
-    local result = workspace:Raycast(origin, (target - origin).Unit * (origin - target).Magnitude, params)
-    return result == nil -- no hit = visible
+    params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    local dir = target - origin
+    local result = workspace:Raycast(origin, dir, params)
+    return result == nil
 end
 
 -- =========================
@@ -116,7 +111,7 @@ local function createESP(char)
         NameTag = newText(18, ESP.NameColor),
         HealthTag = newText(16, Color3.fromRGB(255, 255, 255)),
         DistanceTag = newText(16, ESP.DistanceColor),
-        Tracer = newTracer(),
+        Tracer = newLine(ESP.TracerThickness, ESP.TracerColor),
         Character = char,
     }
 end
@@ -128,6 +123,7 @@ local function removeESP(char)
     if data.NameTag then data.NameTag:Remove() end
     if data.HealthTag then data.HealthTag:Remove() end
     if data.DistanceTag then data.DistanceTag:Remove() end
+    if data.Tracer then data.Tracer:Remove() end
     ESP.Objects[char] = nil
 end
 
@@ -145,7 +141,7 @@ local function createSkeleton(char)
     }
     local lines = {}
     for _, bone in ipairs(bones) do
-        lines[bone] = newLine()
+        lines[bone] = newLine(ESP.SkeletonThickness, ESP.SkeletonColor)
     end
     ESP.Skeletons[char] = lines
 end
@@ -162,7 +158,7 @@ end
 -- Update Loops
 -- =========================
 local function updateESP()
-    local cam = workspace.CurrentCamera
+    local cam = Camera
     if not cam then return end
     local toDelete = {}
 
@@ -172,34 +168,25 @@ local function updateESP()
             continue
         end
 
-        local box, nameTag, healthTag, distTag = data.Box, data.NameTag, data.HealthTag, data.DistanceTag
+        local box, nameTag, healthTag, distTag, tracer =
+            data.Box, data.NameTag, data.HealthTag, data.DistanceTag, data.Tracer
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local head = char:FindFirstChild("Head")
         local hum = char:FindFirstChildOfClass("Humanoid")
-            local plr = Players:GetPlayerFromCharacter(char)
+        local plr = Players:GetPlayerFromCharacter(char)
 
-    -- Skip checks
-    if ESP.TeamCheck and plr and plr.Team == LocalPlayer.Team then continue end
-    if ESP.FriendCheck and plr and LocalPlayer:IsFriendsWith(plr.UserId) then continue end
-    if ESP.VisibilityCheck and hrp then
-        if not isVisible(cam.CFrame.Position, hrp.Position) then
-            if box then box.Visible = false end
-            if nameTag then nameTag.Visible = false end
-            if healthTag then healthTag.Visible = false end
-            if distTag then distTag.Visible = false end
-            if data.Tracer then data.Tracer.Visible = false end
-            continue
+        -- === Checks ===
+        if ESP.TeamCheck and plr and plr.Team == LocalPlayer.Team then goto continue end
+        if ESP.FriendCheck and plr and LocalPlayer:IsFriendsWith(plr.UserId) then goto continue end
+        if ESP.VisibilityCheck and hrp then
+            if not isVisible(cam.CFrame.Position, hrp.Position) then goto continue end
         end
-    end
 
-    -- Team color override
-    local finalColor = ESP.BoxColor
-    if ESP.TeamColorEnabled and plr and plr.Team then
-        finalColor = plr.TeamColor.Color
-    end
-
-    -- Apply finalColor to box, skeleton, tracers
-    if box then box.Color = finalColor end
+        -- Final color (with team override)
+        local finalColor = ESP.BoxColor
+        if ESP.TeamColorEnabled and plr and plr.Team then
+            finalColor = plr.TeamColor.Color
+        end
 
         -- === Box ===
         if ESP.Enabled and hrp and head then
@@ -209,7 +196,7 @@ local function updateESP()
             if vis and scale > 0 then
                 box.Size = Vector2.new(scale * 2, scale * 3)
                 box.Position = Vector2.new(rootPos.X - scale, rootPos.Y - scale * 1.5)
-                box.Color = ESP.BoxColor
+                box.Color = finalColor
                 box.Thickness = ESP.BoxThickness
                 box.Visible = true
             else
@@ -223,7 +210,6 @@ local function updateESP()
         if ESP.NameEnabled and head then
             local pos, vis = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
             if vis then
-                local plr = Players:GetPlayerFromCharacter(char)
                 nameTag.Text = plr and plr.Name or "Unknown"
                 nameTag.Position = Vector2.new(pos.X, pos.Y)
                 nameTag.Color = ESP.NameColor
@@ -265,19 +251,37 @@ local function updateESP()
         else
             if distTag then distTag.Visible = false end
         end
+
+        -- === Tracers ===
+        if ESP.TracersEnabled and hrp then
+            local pos, vis = cam:WorldToViewportPoint(hrp.Position)
+            if vis then
+                tracer.From = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y)
+                tracer.To = Vector2.new(pos.X, pos.Y)
+                tracer.Color = ESP.TracerColor
+                tracer.Thickness = ESP.TracerThickness
+                tracer.Visible = true
+            else
+                tracer.Visible = false
+            end
+        else
+            if tracer then tracer.Visible = false end
+        end
+
+        ::continue::
     end
 
     for _, c in ipairs(toDelete) do removeESP(c) end
 end
 
--- Convert 3D -> 2D screen position
+-- =========================
+-- Skeleton Update (unchanged except using ESP.SkeletonColor/Thickness live)
+-- =========================
 local function to2D(part)
-    local cam = workspace.CurrentCamera
-    local pos, vis = cam:WorldToViewportPoint(part.Position)
+    local pos, vis = Camera:WorldToViewportPoint(part.Position)
     return Vector2.new(pos.X, pos.Y), vis
 end
 
--- Draw connection if both parts exist & visible
 local function drawBone(line, partA, partB)
     if partA and partB then
         local a, visA = to2D(partA)
@@ -296,46 +300,27 @@ end
 
 local function updateSkeletons()
     if not ESP.SkeletonEnabled then return end
-    local toDelete = {}
-
     for char, lines in pairs(ESP.Skeletons) do
-        if not (char and char.Parent == workspace) then
-            table.insert(toDelete, char)
-            continue
-        end
-
+        if not (char and char.Parent == workspace) then continue end
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then
-            table.insert(toDelete, char)
-            continue
-        end
+        if not hum then continue end
 
         if hum.RigType == Enum.HumanoidRigType.R15 then
-            -- Torso + spine
             drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("UpperTorso"))
             drawBone(lines.UpperTorsoToLowerTorso, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LowerTorso"))
-
-            -- Left Arm
             drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LeftUpperArm"))
             drawBone(lines.LeftUpperArmToLeftLowerArm, char:FindFirstChild("LeftUpperArm"), char:FindFirstChild("LeftLowerArm"))
             drawBone(lines.LeftLowerArmToLeftHand, char:FindFirstChild("LeftLowerArm"), char:FindFirstChild("LeftHand"))
-
-            -- Right Arm
             drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("RightUpperArm"))
             drawBone(lines.RightUpperArmToRightLowerArm, char:FindFirstChild("RightUpperArm"), char:FindFirstChild("RightLowerArm"))
             drawBone(lines.RightLowerArmToRightHand, char:FindFirstChild("RightLowerArm"), char:FindFirstChild("RightHand"))
-
-            -- Left Leg
             drawBone(lines.LowerTorsoToLeftUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("LeftUpperLeg"))
             drawBone(lines.LeftUpperLegToLeftLowerLeg, char:FindFirstChild("LeftUpperLeg"), char:FindFirstChild("LeftLowerLeg"))
             drawBone(lines.LeftLowerLegToLeftFoot, char:FindFirstChild("LeftLowerLeg"), char:FindFirstChild("LeftFoot"))
-
-            -- Right Leg
             drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("RightUpperLeg"))
             drawBone(lines.RightUpperLegToRightLowerLeg, char:FindFirstChild("RightUpperLeg"), char:FindFirstChild("RightLowerLeg"))
             drawBone(lines.RightLowerLegToRightFoot, char:FindFirstChild("RightLowerLeg"), char:FindFirstChild("RightFoot"))
-
-        else -- R6 rigs
+        else
             drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("Torso"))
             drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Left Arm"))
             drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Right Arm"))
@@ -343,11 +328,11 @@ local function updateSkeletons()
             drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Right Leg"))
         end
     end
-
-    for _, c in ipairs(toDelete) do removeSkeleton(c) end
 end
 
--- Hook loops once
+-- =========================
+-- Connections
+-- =========================
 if not ESP.__BoxConn or not ESP.__BoxConn.Connected then
     ESP.__BoxConn = RunService.RenderStepped:Connect(updateESP)
 end
@@ -358,39 +343,11 @@ end
 -- =========================
 -- Public API
 -- =========================
-function ESP:Enable()
-    self.Enabled = true
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            createESP(plr.Character)
-        end
-    end
-end
+function ESP:Enable() self.Enabled = true end
+function ESP:Disable() self.Enabled = false end
+function ESP:EnableSkeleton() self.SkeletonEnabled = true end
+function ESP:DisableSkeleton() self.SkeletonEnabled = false end
 
-function ESP:Disable()
-    self.Enabled = false
-    for _, data in pairs(self.Objects) do
-        if data.Box then data.Box.Visible = false end
-    end
-end
-
-function ESP:EnableSkeleton()
-    self.SkeletonEnabled = true
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            createSkeleton(plr.Character)
-        end
-    end
-end
-
-function ESP:DisableSkeleton()
-    self.SkeletonEnabled = false
-    for _, lines in pairs(self.Skeletons) do
-        for _, line in pairs(lines) do line.Visible = false end
-    end
-end
-
--- Optional cleanup
 function ESP:Destroy()
     for char in pairs(self.Objects) do removeESP(char) end
     for char in pairs(self.Skeletons) do removeSkeleton(char) end
