@@ -54,7 +54,7 @@ local function newText(size, color)
     tag.Text = ""
     tag.Size = size
     tag.Center = true
-    tag.Outline = true
+    tag.Outline = false
     tag.Visible = false
     tag.Color = color
     return tag
@@ -89,9 +89,9 @@ local function createESP(char)
     if ESP.Objects[char] then return end
     ESP.Objects[char] = {
         Box = newBox(),
-        NameTag = newText(16, ESP.NameColor),
-        HealthTag = newText(14, Color3.fromRGB(255, 255, 255)),
-        DistanceTag = newText(14, ESP.DistanceColor),
+        NameTag = newText(18, ESP.NameColor),
+        HealthTag = newText(16, Color3.fromRGB(255, 255, 255)),
+        DistanceTag = newText(16, ESP.DistanceColor),
         Character = char,
     }
 end
