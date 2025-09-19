@@ -7,62 +7,104 @@ local LocalPlayer = Players.LocalPlayer
 
 
 -- =========================
--- BOX ESP
+-- BOX ESP (fixed)
 -- =========================
 
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
 ESP.Enabled = false
-ESP.Objects = {}
-ESP.BoxColor = Color3.fromRGB(0, 255, 0)
+ESP.Objects = ESP.Objects or {}
+ESP.BoxColor = ESP.BoxColor or Color3.fromRGB(0, 255, 0)
+ESP.BoxThickness = ESP.BoxThickness or 1.5
 
+-- Create a box for a specific character
+local function createBox(char)
+    -- guard: don't double-create for the same character
+    if ESP.Objects[char] then return end
 
-local function createBox(target)
     local box = Drawing.new("Square")
-    box.Thickness = 1.5
+    box.Thickness = ESP.BoxThickness
     box.Color = ESP.BoxColor
     box.Filled = false
     box.Transparency = 1
     box.Visible = false
 
-    ESP.Objects[target] = {
+    ESP.Objects[char] = {
         Box = box,
-        Character = target
+        Character = char,
     }
 end
 
--- Remove ESP from a character
-local function removeBox(target)
-    if ESP.Objects[target] then
-        ESP.Objects[target].Box:Remove()
-        ESP.Objects[target] = nil
+-- Remove a character's box and entry
+local function removeBox(char)
+    local data = ESP.Objects[char]
+    if data then
+        if data.Box then
+            data.Box:Remove()
+        end
+        ESP.Objects[char] = nil
     end
 end
 
--- Update ESP per frame
+-- Update all boxes each frame
 local function update()
-    for target, data in pairs(ESP.Objects) do
-        local char = data.Character
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local head = char:FindFirstChild("Head")
+    local cam = workspace.CurrentCamera
+    if not cam then return end
 
-        if hrp and head and ESP.Enabled then
-            local rootPos, vis = workspace.CurrentCamera:WorldToViewportPoint(hrp.Position)
-            local headPos = workspace.CurrentCamera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-            local scale = (headPos - rootPos).Magnitude
+    -- collect invalid entries to delete after iteration
+    local toDelete = {}
 
-            if vis then
-                data.Box.Size = Vector2.new(scale * 2, scale * 3)
-                data.Box.Position = Vector2.new(rootPos.X - scale, rootPos.Y - scale * 1.5)
-                data.Box.Visible = true
+    for char, data in pairs(ESP.Objects) do
+        local box = data.Box
+        local alive = char and char.Parent == workspace
+
+        -- If character got destroyed / left workspace, purge it
+        if (not alive) then
+            box.Visible = false
+            table.insert(toDelete, char)
+            continue
+        end
+
+        -- Always apply latest styles every frame
+        box.Color = ESP.BoxColor
+        box.Thickness = ESP.BoxThickness
+
+        if ESP.Enabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local head = char:FindFirstChild("Head")
+
+            if hrp and head then
+                local rootPos, vis = cam:WorldToViewportPoint(hrp.Position)
+                local headPos = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local scale = (headPos - rootPos).Magnitude
+
+                if vis and scale > 0 then
+                    box.Size = Vector2.new(scale * 2, scale * 3)
+                    box.Position = Vector2.new(rootPos.X - scale, rootPos.Y - scale * 1.5)
+                    box.Visible = true
+                else
+                    box.Visible = false
+                end
             else
-                data.Box.Visible = false
+                box.Visible = false
             end
         else
-            data.Box.Visible = false
+            box.Visible = false
         end
     end
+
+    -- finalize deletions
+    for _, deadChar in ipairs(toDelete) do
+        removeBox(deadChar)
+    end
 end
--- Main loop
-RunService.RenderStepped:Connect(update)
+
+-- Hook the update loop once
+if not ESP.__BoxConn or not ESP.__BoxConn.Connected then
+    ESP.__BoxConn = RunService.RenderStepped:Connect(update)
+end
 
 -- Public API
 function ESP:Enable()
@@ -76,39 +118,65 @@ end
 
 function ESP:Disable()
     self.Enabled = false
-    for _, obj in pairs(self.Objects) do
-        obj.Box.Visible = false
+    for _, data in pairs(self.Objects) do
+        if data.Box then data.Box.Visible = false end
     end
 end
 
--- Auto-track players joining/leaving
-Players.PlayerAdded:Connect(function(plr)
+-- Track players joining/leaving and respawning
+local function hookPlayer(plr)
+    if plr == LocalPlayer then return end
+
+    -- On spawn, create (or replace) the box for the new Character
     plr.CharacterAdded:Connect(function(char)
+        task.wait(0.5) -- small buffer for parts to exist
         if ESP.Enabled then
-            task.wait(1) -- wait for character to load
             createBox(char)
         end
     end)
-end)
+
+    -- On despawn, remove the old Character's box so duplicates don't stack
+    if plr.CharacterRemoving then
+        plr.CharacterRemoving:Connect(function(char)
+            removeBox(char)
+        end)
+    end
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    hookPlayer(plr)
+end
+
+Players.PlayerAdded:Connect(hookPlayer)
 
 Players.PlayerRemoving:Connect(function(plr)
-    if plr.Character then
-        removeBox(plr.Character)
+    -- remove any boxes that belong to this player (in case character is still around)
+    for char in pairs(ESP.Objects) do
+        local owner = Players:GetPlayerFromCharacter(char)
+        if owner == plr then
+            removeBox(char)
+        end
     end
 end)
 
+
 -- =========================
--- Skeleton ESP
+-- Skeleton ESP (fixed)
 -- =========================
 
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
 ESP.SkeletonEnabled = false
-ESP.SkeletonColor = Color3.fromRGB(255, 255, 255)
-ESP.Skeletons = {}
+ESP.SkeletonColor = ESP.SkeletonColor or Color3.fromRGB(255, 255, 255)
+ESP.SkeletonThickness = ESP.SkeletonThickness or 1.5
+ESP.Skeletons = ESP.Skeletons or {}
 
 -- Utility: create a new line
 local function newLine()
     local line = Drawing.new("Line")
-    line.Thickness = 1.5
+    line.Thickness = ESP.SkeletonThickness
     line.Color = ESP.SkeletonColor
     line.Transparency = 1
     line.Visible = false
@@ -117,9 +185,9 @@ end
 
 -- Create skeleton container for a character
 local function createSkeleton(char)
-    local lines = {}
+    if ESP.Skeletons[char] then return end -- don’t double-create
 
-    -- We'll store each bone connection by name
+    local lines = {}
     local bones = {
         "HeadToUpperTorso",
         "UpperTorsoToLowerTorso",
@@ -146,8 +214,9 @@ end
 
 -- Remove skeleton when character is gone
 local function removeSkeleton(char)
-    if ESP.Skeletons[char] then
-        for _, line in pairs(ESP.Skeletons[char]) do
+    local lines = ESP.Skeletons[char]
+    if lines then
+        for _, line in pairs(lines) do
             line:Remove()
         end
         ESP.Skeletons[char] = nil
@@ -169,7 +238,8 @@ local function drawBone(line, partA, partB)
         if visA and visB then
             line.From = a
             line.To = b
-            line.Color = ESP.SkeletonColor
+            line.Color = ESP.SkeletonColor -- live color update
+            line.Thickness = ESP.SkeletonThickness -- live thickness update
             line.Visible = true
             return
         end
@@ -181,9 +251,19 @@ end
 local function updateSkeletons()
     if not ESP.SkeletonEnabled then return end
 
+    local toDelete = {}
     for char, lines in pairs(ESP.Skeletons) do
+        -- purge destroyed characters
+        if not (char and char.Parent == workspace) then
+            table.insert(toDelete, char)
+            continue
+        end
+
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then continue end
+        if not hum then
+            table.insert(toDelete, char)
+            continue
+        end
 
         if hum.RigType == Enum.HumanoidRigType.R15 then
             drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("UpperTorso"))
@@ -217,10 +297,17 @@ local function updateSkeletons()
             drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Right Leg"))
         end
     end
+
+    -- cleanup invalid skeletons
+    for _, char in ipairs(toDelete) do
+        removeSkeleton(char)
+    end
 end
 
 -- Hook into render loop
-RunService.RenderStepped:Connect(updateSkeletons)
+if not ESP.__SkeletonConn or not ESP.__SkeletonConn.Connected then
+    ESP.__SkeletonConn = RunService.RenderStepped:Connect(updateSkeletons)
+end
 
 -- Public API
 function ESP:EnableSkeleton()
@@ -241,19 +328,33 @@ function ESP:DisableSkeleton()
     end
 end
 
-Players.PlayerAdded:Connect(function(plr)
+-- Handle player lifecycle
+local function hookPlayer(plr)
+    if plr == LocalPlayer then return end
+
     plr.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
         if ESP.SkeletonEnabled then
-            task.wait(1)
             createSkeleton(char)
         end
     end)
-end)
+
+    plr.CharacterRemoving:Connect(function(char)
+        removeSkeleton(char)
+    end)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    hookPlayer(plr)
+end
+
+Players.PlayerAdded:Connect(hookPlayer)
 
 Players.PlayerRemoving:Connect(function(plr)
     if plr.Character then
         removeSkeleton(plr.Character)
     end
 end)
+
 
 return ESP
