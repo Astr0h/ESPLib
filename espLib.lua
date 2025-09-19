@@ -311,6 +311,11 @@ end
 -- =========================
 function ESP:Enable()
     self.Enabled = true
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            createESP(plr.Character)
+        end
+    end
 end
 
 function ESP:Disable()
@@ -322,6 +327,11 @@ end
 
 function ESP:EnableSkeleton()
     self.SkeletonEnabled = true
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            createSkeleton(plr.Character)
+        end
+    end
 end
 
 function ESP:DisableSkeleton()
@@ -347,8 +357,8 @@ local function hookPlayer(plr)
     if plr == LocalPlayer then return end
     plr.CharacterAdded:Connect(function(char)
         task.wait(0.5)
-        createESP(char)       -- always create containers
-        createSkeleton(char)  -- always create containers
+        createESP(char)
+        createSkeleton(char)
     end)
     plr.CharacterRemoving:Connect(function(char)
         removeESP(char)
