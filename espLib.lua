@@ -99,11 +99,10 @@ end
 local function removeESP(char)
     local data = ESP.Objects[char]
     if not data then return end
-    for _, obj in pairs(data) do
-        if typeof(obj) == "userdata" and obj.Remove then
-            obj:Remove()
-        end
-    end
+    if data.Box then data.Box:Remove() end
+    if data.NameTag then data.NameTag:Remove() end
+    if data.HealthTag then data.HealthTag:Remove() end
+    if data.DistanceTag then data.DistanceTag:Remove() end
     ESP.Objects[char] = nil
 end
 
@@ -141,14 +140,84 @@ local function updateESP()
     local cam = workspace.CurrentCamera
     if not cam then return end
     local toDelete = {}
+
     for char, data in pairs(ESP.Objects) do
         if not (char and char.Parent == workspace) then
             table.insert(toDelete, char)
             continue
         end
-        -- (Box/Name/Health/Distance update here, same as your working code)
-        -- ...
+
+        local box, nameTag, healthTag, distTag = data.Box, data.NameTag, data.HealthTag, data.DistanceTag
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        -- === Box ===
+        if ESP.Enabled and hrp and head then
+            local rootPos, vis = cam:WorldToViewportPoint(hrp.Position)
+            local headPos = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+            local scale = (headPos - rootPos).Magnitude
+            if vis and scale > 0 then
+                box.Size = Vector2.new(scale * 2, scale * 3)
+                box.Position = Vector2.new(rootPos.X - scale, rootPos.Y - scale * 1.5)
+                box.Color = ESP.BoxColor
+                box.Thickness = ESP.BoxThickness
+                box.Visible = true
+            else
+                box.Visible = false
+            end
+        else
+            if box then box.Visible = false end
+        end
+
+        -- === Name Tag ===
+        if ESP.NameEnabled and head then
+            local pos, vis = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
+            if vis then
+                local plr = Players:GetPlayerFromCharacter(char)
+                nameTag.Text = plr and plr.Name or "Unknown"
+                nameTag.Position = Vector2.new(pos.X, pos.Y)
+                nameTag.Color = ESP.NameColor
+                nameTag.Visible = true
+            else
+                nameTag.Visible = false
+            end
+        else
+            if nameTag then nameTag.Visible = false end
+        end
+
+        -- === Health Tag ===
+        if ESP.HealthEnabled and head and hum then
+            local pos, vis = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 1.9, 0))
+            if vis then
+                healthTag.Text = string.format("%d / %d", math.floor(hum.Health), hum.MaxHealth)
+                healthTag.Position = Vector2.new(pos.X, pos.Y)
+                healthTag.Color = getHealthColor(hum.Health, hum.MaxHealth)
+                healthTag.Visible = true
+            else
+                healthTag.Visible = false
+            end
+        else
+            if healthTag then healthTag.Visible = false end
+        end
+
+        -- === Distance Tag ===
+        if ESP.DistanceEnabled and hrp and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local pos, vis = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+            if vis then
+                local dist = (hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                distTag.Text = string.format("[%dm]", math.floor(dist))
+                distTag.Position = Vector2.new(pos.X, pos.Y)
+                distTag.Color = ESP.DistanceColor
+                distTag.Visible = true
+            else
+                distTag.Visible = false
+            end
+        else
+            if distTag then distTag.Visible = false end
+        end
     end
+
     for _, c in ipairs(toDelete) do removeESP(c) end
 end
 
@@ -160,8 +229,12 @@ local function updateSkeletons()
             table.insert(toDelete, char)
             continue
         end
-        -- (drawBone logic here, same as your working code)
-        -- ...
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then
+            table.insert(toDelete, char)
+            continue
+        end
+        -- drawBone logic goes here (same as your fixed skeleton code)
     end
     for _, c in ipairs(toDelete) do removeSkeleton(c) end
 end
@@ -189,7 +262,10 @@ end
 function ESP:Disable()
     self.Enabled = false
     for _, data in pairs(self.Objects) do
-        for _, obj in pairs(data) do if obj.Visible ~= nil then obj.Visible = false end end
+        if data.Box then data.Box.Visible = false end
+        if data.NameTag then data.NameTag.Visible = false end
+        if data.HealthTag then data.HealthTag.Visible = false end
+        if data.DistanceTag then data.DistanceTag.Visible = false end
     end
 end
 
