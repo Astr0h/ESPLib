@@ -1,20 +1,24 @@
--- Main toggleables
-local ESP = {}
-ESP.Enabled = false
-ESP.Objects = {}
-ESP.SkeletonEnabled = false
-ESP.Skeletons = {}
-
 --Variables lol
+local ESP = {}
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- Create a box ESP for a character
+
+
+-- =========================
+-- BOX ESP
+-- =========================
+
+ESP.Enabled = false
+ESP.Objects = {}
+ESP.BoxColor = Color3.fromRGB(0, 255, 0)
+
+
 local function createBox(target)
     local box = Drawing.new("Square")
     box.Thickness = 1.5
-    box.Color = Color3.fromRGB(0, 255, 0)
+    box.Color = ESP.BoxColor
     box.Filled = false
     box.Transparency = 1
     box.Visible = false
@@ -57,131 +61,8 @@ local function update()
         end
     end
 end
-
-
--- Function to create skeleton lines for a character
-local function createSkeleton(char)
-    local lines = {}
-
-    local function newLine()
-        local line = Drawing.new("Line")
-        line.Thickness = 1.5
-        line.Color = Color3.fromRGB(255, 255, 255)
-        line.Transparency = 1
-        line.Visible = false
-        return line
-    end
-
-    -- we’ll need lines for limbs + torso
-    lines.Head = newLine()
-    lines.Torso = newLine()
-    lines.LeftArm = newLine()
-    lines.RightArm = newLine()
-    lines.LeftLeg = newLine()
-    lines.RightLeg = newLine()
-
-    ESP.Skeletons[char] = lines
-end
-
--- Remove skeleton when player leaves
-local function removeSkeleton(char)
-    if ESP.Skeletons[char] then
-        for _, line in pairs(ESP.Skeletons[char]) do
-            line:Remove()
-        end
-        ESP.Skeletons[char] = nil
-    end
-end
-
--- Update skeleton drawing
-local function updateSkeleton()
-    if not ESP.SkeletonEnabled then return end
-
-    for char, lines in pairs(ESP.Skeletons) do
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local head = char:FindFirstChild("Head")
-        local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
-        local leftArm = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
-        local rightArm = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
-        local leftLeg = char:FindFirstChild("LeftFoot") or char:FindFirstChild("Left Leg")
-        local rightLeg = char:FindFirstChild("RightFoot") or char:FindFirstChild("Right Leg")
-
-        if hrp and head and torso then
-            local cam = workspace.CurrentCamera
-
-            local function to2D(part)
-                local pos, vis = cam:WorldToViewportPoint(part.Position)
-                return Vector2.new(pos.X, pos.Y), vis
-            end
-
-            local torsoPos, visTorso = to2D(torso)
-            local headPos, visHead = to2D(head)
-
-            if visTorso and visHead then
-                -- Head to Torso
-                lines.Head.From = headPos
-                lines.Head.To = torsoPos
-                lines.Head.Visible = true
-            else
-                lines.Head.Visible = false
-            end
-
-            -- Arms
-            if leftArm then
-                local pos, vis = to2D(leftArm)
-                if vis then
-                    lines.LeftArm.From = torsoPos
-                    lines.LeftArm.To = pos
-                    lines.LeftArm.Visible = true
-                else
-                    lines.LeftArm.Visible = false
-                end
-            end
-            if rightArm then
-                local pos, vis = to2D(rightArm)
-                if vis then
-                    lines.RightArm.From = torsoPos
-                    lines.RightArm.To = pos
-                    lines.RightArm.Visible = true
-                else
-                    lines.RightArm.Visible = false
-                end
-            end
-
-            -- Legs
-            if leftLeg then
-                local pos, vis = to2D(leftLeg)
-                if vis then
-                    lines.LeftLeg.From = torsoPos
-                    lines.LeftLeg.To = pos
-                    lines.LeftLeg.Visible = true
-                else
-                    lines.LeftLeg.Visible = false
-                end
-            end
-            if rightLeg then
-                local pos, vis = to2D(rightLeg)
-                if vis then
-                    lines.RightLeg.From = torsoPos
-                    lines.RightLeg.To = pos
-                    lines.RightLeg.Visible = true
-                else
-                    lines.RightLeg.Visible = false
-                end
-            end
-        else
-            for _, line in pairs(lines) do
-                line.Visible = false
-            end
-        end
-    end
-end
-
-
-
 -- Main loop
 RunService.RenderStepped:Connect(update)
-RunService.RenderStepped:Connect(updateSkeleton)
 
 -- Public API
 function ESP:Enable()
@@ -216,6 +97,132 @@ Players.PlayerRemoving:Connect(function(plr)
     end
 end)
 
+-- =========================
+-- Skeleton ESP
+-- =========================
+
+ESP.SkeletonEnabled = false
+ESP.SkeletonColor = Color3.fromRGB(255, 255, 255)
+ESP.Skeletons = {}
+
+-- Utility: create a new line
+local function newLine()
+    local line = Drawing.new("Line")
+    line.Thickness = 1.5
+    line.Color = ESP.SkeletonColor
+    line.Transparency = 1
+    line.Visible = false
+    return line
+end
+
+-- Create skeleton container for a character
+local function createSkeleton(char)
+    local lines = {}
+
+    -- We'll store each bone connection by name
+    local bones = {
+        "HeadToUpperTorso",
+        "UpperTorsoToLowerTorso",
+        "UpperTorsoToLeftUpperArm",
+        "LeftUpperArmToLeftLowerArm",
+        "LeftLowerArmToLeftHand",
+        "UpperTorsoToRightUpperArm",
+        "RightUpperArmToRightLowerArm",
+        "RightLowerArmToRightHand",
+        "LowerTorsoToLeftUpperLeg",
+        "LeftUpperLegToLeftLowerLeg",
+        "LeftLowerLegToLeftFoot",
+        "LowerTorsoToRightUpperLeg",
+        "RightUpperLegToRightLowerLeg",
+        "RightLowerLegToRightFoot",
+    }
+
+    for _, bone in ipairs(bones) do
+        lines[bone] = newLine()
+    end
+
+    ESP.Skeletons[char] = lines
+end
+
+-- Remove skeleton when character is gone
+local function removeSkeleton(char)
+    if ESP.Skeletons[char] then
+        for _, line in pairs(ESP.Skeletons[char]) do
+            line:Remove()
+        end
+        ESP.Skeletons[char] = nil
+    end
+end
+
+-- Convert 3D -> 2D screen position
+local function to2D(part)
+    local cam = workspace.CurrentCamera
+    local pos, vis = cam:WorldToViewportPoint(part.Position)
+    return Vector2.new(pos.X, pos.Y), vis
+end
+
+-- Draw connection if both parts exist & visible
+local function drawBone(line, partA, partB)
+    if partA and partB then
+        local a, visA = to2D(partA)
+        local b, visB = to2D(partB)
+        if visA and visB then
+            line.From = a
+            line.To = b
+            line.Color = ESP.SkeletonColor
+            line.Visible = true
+            return
+        end
+    end
+    line.Visible = false
+end
+
+-- Main update loop for skeletons
+local function updateSkeletons()
+    if not ESP.SkeletonEnabled then return end
+
+    for char, lines in pairs(ESP.Skeletons) do
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then continue end
+
+        if hum.RigType == Enum.HumanoidRigType.R15 then
+            drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("UpperTorso"))
+            drawBone(lines.UpperTorsoToLowerTorso, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LowerTorso"))
+
+            -- Left Arm
+            drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("LeftUpperArm"))
+            drawBone(lines.LeftUpperArmToLeftLowerArm, char:FindFirstChild("LeftUpperArm"), char:FindFirstChild("LeftLowerArm"))
+            drawBone(lines.LeftLowerArmToLeftHand, char:FindFirstChild("LeftLowerArm"), char:FindFirstChild("LeftHand"))
+
+            -- Right Arm
+            drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("UpperTorso"), char:FindFirstChild("RightUpperArm"))
+            drawBone(lines.RightUpperArmToRightLowerArm, char:FindFirstChild("RightUpperArm"), char:FindFirstChild("RightLowerArm"))
+            drawBone(lines.RightLowerArmToRightHand, char:FindFirstChild("RightLowerArm"), char:FindFirstChild("RightHand"))
+
+            -- Left Leg
+            drawBone(lines.LowerTorsoToLeftUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("LeftUpperLeg"))
+            drawBone(lines.LeftUpperLegToLeftLowerLeg, char:FindFirstChild("LeftUpperLeg"), char:FindFirstChild("LeftLowerLeg"))
+            drawBone(lines.LeftLowerLegToLeftFoot, char:FindFirstChild("LeftLowerLeg"), char:FindFirstChild("LeftFoot"))
+
+            -- Right Leg
+            drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("LowerTorso"), char:FindFirstChild("RightUpperLeg"))
+            drawBone(lines.RightUpperLegToRightLowerLeg, char:FindFirstChild("RightUpperLeg"), char:FindFirstChild("RightLowerLeg"))
+            drawBone(lines.RightLowerLegToRightFoot, char:FindFirstChild("RightLowerLeg"), char:FindFirstChild("RightFoot"))
+
+        else -- R6
+            drawBone(lines.HeadToUpperTorso, char:FindFirstChild("Head"), char:FindFirstChild("Torso"))
+            drawBone(lines.UpperTorsoToLeftUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Left Arm"))
+            drawBone(lines.UpperTorsoToRightUpperArm, char:FindFirstChild("Torso"), char:FindFirstChild("Right Arm"))
+            drawBone(lines.LowerTorsoToLeftUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Left Leg"))
+            drawBone(lines.LowerTorsoToRightUpperLeg, char:FindFirstChild("Torso"), char:FindFirstChild("Right Leg"))
+        end
+    end
+end
+
+-- Hook into render loop
+RunService.RenderStepped:Connect(updateSkeletons)
+
+-- Public API
 function ESP:EnableSkeleton()
     self.SkeletonEnabled = true
     for _, plr in ipairs(Players:GetPlayers()) do
