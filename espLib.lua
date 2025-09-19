@@ -19,7 +19,6 @@ local LocalPlayer = Players.LocalPlayer
 -- =========================
 ESP.Enabled = ESP.Enabled or false
 ESP.Objects = ESP.Objects or {}
-
 ESP.BoxColor = ESP.BoxColor or Color3.fromRGB(0, 255, 0)
 ESP.BoxThickness = ESP.BoxThickness or 1.5
 
@@ -35,6 +34,14 @@ ESP.SkeletonEnabled = ESP.SkeletonEnabled or false
 ESP.SkeletonColor = ESP.SkeletonColor or Color3.fromRGB(255, 255, 255)
 ESP.SkeletonThickness = ESP.SkeletonThickness or 1.5
 ESP.Skeletons = ESP.Skeletons or {}
+
+ESP.TracersEnabled = ESP.TracersEnabled or false
+ESP.TracerColor = ESP.TracerColor or Color3.fromRGB(255, 255, 255)
+
+ESP.TeamColorEnabled = ESP.TeamColorEnabled or false
+ESP.TeamCheck = ESP.TeamCheck or false
+ESP.FriendCheck = ESP.FriendCheck or false
+ESP.VisibilityCheck = ESP.VisibilityCheck or false
 
 -- =========================
 -- Helpers
@@ -82,6 +89,23 @@ local function getHealthColor(current, max)
     end
 end
 
+local function newTracer()
+    local line = Drawing.new("Line")
+    line.Thickness = 1.5
+    line.Color = ESP.TracerColor
+    line.Transparency = 1
+    line.Visible = false
+    return line
+end
+
+local function isVisible(origin, target)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character, workspace.CurrentCamera}
+    local result = workspace:Raycast(origin, (target - origin).Unit * (origin - target).Magnitude, params)
+    return result == nil -- no hit = visible
+end
+
 -- =========================
 -- Box + Tags
 -- =========================
@@ -92,6 +116,7 @@ local function createESP(char)
         NameTag = newText(18, ESP.NameColor),
         HealthTag = newText(16, Color3.fromRGB(255, 255, 255)),
         DistanceTag = newText(16, ESP.DistanceColor),
+        Tracer = newTracer(),
         Character = char,
     }
 end
@@ -151,6 +176,30 @@ local function updateESP()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local head = char:FindFirstChild("Head")
         local hum = char:FindFirstChildOfClass("Humanoid")
+            local plr = Players:GetPlayerFromCharacter(char)
+
+    -- Skip checks
+    if ESP.TeamCheck and plr and plr.Team == LocalPlayer.Team then continue end
+    if ESP.FriendCheck and plr and LocalPlayer:IsFriendsWith(plr.UserId) then continue end
+    if ESP.VisibilityCheck and hrp then
+        if not isVisible(cam.CFrame.Position, hrp.Position) then
+            if box then box.Visible = false end
+            if nameTag then nameTag.Visible = false end
+            if healthTag then healthTag.Visible = false end
+            if distTag then distTag.Visible = false end
+            if data.Tracer then data.Tracer.Visible = false end
+            continue
+        end
+    end
+
+    -- Team color override
+    local finalColor = ESP.BoxColor
+    if ESP.TeamColorEnabled and plr and plr.Team then
+        finalColor = plr.TeamColor.Color
+    end
+
+    -- Apply finalColor to box, skeleton, tracers
+    if box then box.Color = finalColor end
 
         -- === Box ===
         if ESP.Enabled and hrp and head then
