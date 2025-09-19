@@ -295,10 +295,9 @@ local function updateSkeletons()
         end
     end
 
-    for _, c in ipairs(toDelete) do
-        removeSkeleton(c)
-    end
+    for _, c in ipairs(toDelete) do removeSkeleton(c) end
 end
+
 -- Hook loops once
 if not ESP.__BoxConn or not ESP.__BoxConn.Connected then
     ESP.__BoxConn = RunService.RenderStepped:Connect(updateESP)
@@ -312,30 +311,17 @@ end
 -- =========================
 function ESP:Enable()
     self.Enabled = true
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            createESP(plr.Character)
-        end
-    end
 end
 
 function ESP:Disable()
     self.Enabled = false
     for _, data in pairs(self.Objects) do
         if data.Box then data.Box.Visible = false end
-        if data.NameTag then data.NameTag.Visible = false end
-        if data.HealthTag then data.HealthTag.Visible = false end
-        if data.DistanceTag then data.DistanceTag.Visible = false end
     end
 end
 
 function ESP:EnableSkeleton()
     self.SkeletonEnabled = true
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            createSkeleton(plr.Character)
-        end
-    end
 end
 
 function ESP:DisableSkeleton()
@@ -361,8 +347,8 @@ local function hookPlayer(plr)
     if plr == LocalPlayer then return end
     plr.CharacterAdded:Connect(function(char)
         task.wait(0.5)
-        if ESP.Enabled then createESP(char) end
-        if ESP.SkeletonEnabled then createSkeleton(char) end
+        createESP(char)       -- always create containers
+        createSkeleton(char)  -- always create containers
     end)
     plr.CharacterRemoving:Connect(function(char)
         removeESP(char)
