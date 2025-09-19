@@ -1,8 +1,9 @@
 --Variables lol
+_G.SeosHubESP = _G.SeosHubESP or {}
+local ESP = _G.SeosHubESP
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local ESP = {}
 
 ESP.Enabled = false
 ESP.Objects = ESP.Objects or {}
